@@ -333,6 +333,21 @@ def is_valid_unit(unit):
 
     return bool(re.match(r'^(apt\.?\s*)?\d+[a-z]$', unit))
 
+def normalize_unit(unit):
+    if not unit:
+        return None
+
+    unit = unit.strip().upper()
+
+    # Remove leading zero (06D → 6D)
+    if unit.startswith("0"):
+        unit = unit[1:]
+
+    # Remove "APT", "APT.", etc.
+    unit = unit.replace("APT.", "").replace("APT", "").strip()
+
+    return unit
+
 def process_support_row(unit, issue, raw_date_reported, raw_date_resolved, all_active_installs, install_to_building_map, filter_year=None, filter_month=None):
     if not raw_date_reported:
         return None
@@ -864,11 +879,96 @@ def billing(request):
         next_year = start_date.year + (1 if start_date.month == 12 else 0)
         start_date = start_date.replace(year=next_year, month=next_month)
 
+def billing(request):
+    months = []
+    start_date = datetime(2022, 1, 1)
+    current_date = datetime.now()
+    current_year_month = (current_date.year, current_date.month)
+
+    installs = fetch_all_installs(ALLOWED_NETWORK_NUMBERS_3)
+
+    installed = []
+
+    # Active counts per building
+    active_410 = 0
+    active_460 = 0
+    active_131 = 0
+
+    unit_counts_410 = defaultdict(int)
+    unit_counts_460 = defaultdict(int)
+    unit_counts_131 = defaultdict(int)
+    
+    for install in installs:
+        if install.get("status") == "Active":
+            unit = install.get("unit")
+    
+            if not is_valid_unit(unit):
+                continue
+    
+            norm_unit = normalize_unit(unit)
+            net = install["node"]["network_number"]
+    
+            if net == 1932:
+                active_410 += 1
+                unit_counts_410[norm_unit] += 1
+            elif net == 1933:
+                active_460 += 1
+                unit_counts_460[norm_unit] += 1
+            elif net == 1934:
+                active_131 += 1
+                unit_counts_131[norm_unit] += 1
+    
+    dupes_410 = ", ".join(sorted([u for u, c in unit_counts_410.items() if c > 1]))
+    dupes_460 = ", ".join(sorted([u for u, c in unit_counts_460.items() if c > 1]))
+    dupes_131 = ", ".join(sorted([u for u, c in unit_counts_131.items() if c > 1]))
+    
+    while (start_date.year, start_date.month) < current_year_month:
+        month_installs = []
+
+        for install in installs:
+            install_date = datetime.strptime(install['install_date'], "%Y-%m-%d") if install['install_date'] else None
+            try:
+                request_date = datetime.strptime(install['request_date'], "%Y-%m-%dT%H:%M:%S.%fZ")
+            except ValueError:
+                request_date = datetime.strptime(install['request_date'], "%Y-%m-%dT%H:%M:%SZ")
+            abandon_date = datetime.strptime(install['abandon_date'], "%Y-%m-%d") if install['abandon_date'] else None
+
+            if install_date and install_date.year == start_date.year and install_date.month == start_date.month:
+                if install['unit'][0] == "0":
+                    install['unit'] = install['unit'][1:]
+                new_install = ""
+
+                if install['node']['network_number'] == 1932:
+                    new_install = "410-" + install['unit'].upper()
+                if install['node']['network_number'] == 1933:
+                    new_install = "460-" + install['unit'].upper()
+                if install['node']['network_number'] == 1934:
+                    new_install = "131-" + install['unit'].upper()
+                
+                if new_install not in installed:
+                    installed.append(new_install)
+                    install['apt'] = new_install
+                    month_installs.append(install)
+       
+        months.append({
+            'value': start_date.strftime("%Y%m"),
+            'formatted': start_date.strftime("%B %Y"),
+            'count': len(month_installs),
+            'installs': month_installs
+        })
+
+        next_month = start_date.month % 12 + 1
+        next_year = start_date.year + (1 if start_date.month == 12 else 0)
+        start_date = start_date.replace(year=next_year, month=next_month)
+
     return render(request, 'dashboard/gsg-billing.html', {
         'months': months,
         'total': len(installed),
         'active_410': active_410,
         'active_460': active_460,
         'active_131': active_131,
-        'active_total': active_410 + active_460 + active_131
+        'active_total': active_410 + active_460 + active_131,
+        'dupes_410': dupes_410,
+        'dupes_460': dupes_460,
+        'dupes_131': dupes_131
     })

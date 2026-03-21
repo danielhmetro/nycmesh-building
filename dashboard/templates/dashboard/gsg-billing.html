@@ -53,10 +53,25 @@
             <button type="button" class="btn btn-primary mb-2" onclick="location.href = '/gsg/reports/'">Switch to Reports</button>
         </div>
         <h2>Active Installs</h2>
-        <ul>
-            <li>410: {{ active_410 }}</li>
-            <li>460: {{ active_460 }}</li>
-            <li>131: {{ active_131 }}</li>
+        <<ul>
+            <li>
+                410: {{ active_410 }}
+                {% if dupes_410 %}
+                    (Duplicates: {{ dupes_410 }})
+                {% endif %}
+            </li>
+            <li>
+                460: {{ active_460 }}
+                {% if dupes_460 %}
+                    (Duplicates: {{ dupes_460 }})
+                {% endif %}
+            </li>
+            <li>
+                131: {{ active_131 }}
+                {% if dupes_131 %}
+                    (Duplicates: {{ dupes_131 }})
+                {% endif %}
+            </li>
             <li>Total Active: {{ active_total }}</li>
         </ul>
         <table>
