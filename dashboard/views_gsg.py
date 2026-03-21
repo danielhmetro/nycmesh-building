@@ -315,6 +315,24 @@ def fetch_all_installs(network_numbers):
                 installs.append(install)
     return installs
 
+def is_valid_unit(unit):
+    if not unit:
+        return False
+
+    unit = unit.strip().lower()
+
+    # Reject obvious non-units
+    invalid_keywords = [
+        "ap", "access", "community", "ground",
+        "north", "south", "east", "west",
+        "none", "floor"
+    ]
+
+    if any(word in unit for word in invalid_keywords):
+        return False
+
+    return bool(re.match(r'^(apt\.?\s*)?\d+[a-z]$', unit))
+
 def process_support_row(unit, issue, raw_date_reported, raw_date_resolved, all_active_installs, install_to_building_map, filter_year=None, filter_month=None):
     if not raw_date_reported:
         return None
@@ -786,7 +804,6 @@ def billing(request):
     current_year_month = (current_date.year, current_date.month)
 
     installs = fetch_all_installs(ALLOWED_NETWORK_NUMBERS_3)
-    units = fetch_all_units()
 
     installed = []
 
@@ -797,6 +814,9 @@ def billing(request):
 
     for install in installs:
         if install.get("status") == "Active":
+            unit = install.get("unit")
+            if not is_valid_unit(unit):
+                continue  # skip non-apartment installs
             net = install["node"]["network_number"]
             if net == 1932:
                 active_410 += 1
